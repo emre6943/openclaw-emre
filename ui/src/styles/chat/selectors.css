@@ -1,0 +1,101 @@
+/* Chat compose selectors - model & auth profile pills */
+
+.chat-compose__selectors {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.chat-selector {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-family: var(--font-body);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 150ms ease-out,
+    border-color 150ms ease-out,
+    color 150ms ease-out;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+}
+
+.chat-selector:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--ring);
+  color: var(--fg);
+}
+
+.chat-selector:focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+
+.chat-selector--disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Light theme overrides */
+:root[data-theme="light"] .chat-selector {
+  background: rgba(16, 24, 40, 0.03);
+  border-color: rgba(16, 24, 40, 0.12);
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .chat-selector:hover {
+  background: rgba(16, 24, 40, 0.06);
+  border-color: rgba(16, 24, 40, 0.2);
+  color: var(--fg);
+}
+
+:root[data-theme="light"] .chat-selector:focus-visible {
+  box-shadow: 0 0 0 2px rgba(16, 24, 40, 0.08);
+}
+
+/* The select arrow */
+.chat-selector__arrow {
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+/* Auth profile badge (read-only) */
+.chat-selector--badge {
+  cursor: default;
+}
+
+.chat-selector--badge:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border);
+  color: var(--muted);
+}
+
+:root[data-theme="light"] .chat-selector--badge:hover {
+  background: rgba(16, 24, 40, 0.03);
+  border-color: rgba(16, 24, 40, 0.12);
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .chat-compose__selectors {
+    gap: 4px;
+  }
+
+  .chat-selector {
+    height: 26px;
+    padding: 0 8px;
+    font-size: 11px;
+  }
+}

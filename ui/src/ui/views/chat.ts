@@ -1,7 +1,7 @@
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
-import type { SessionsListResult } from "../types.ts";
+import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
 import type { ChatItem, MessageGroup } from "../types/chat-types.ts";
 import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
 import {
@@ -81,6 +81,10 @@ export type ChatProps = {
   onCloseSidebar?: () => void;
   onSplitRatioChange?: (ratio: number) => void;
   onChatScroll?: (event: Event) => void;
+  // Model & auth profile selectors
+  availableModels?: Array<{ id: string; name: string; provider: string }>;
+  availableAuthProfiles?: Array<{ id: string; provider: string }>;
+  onModelChange?: (modelId: string | null) => void;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -194,6 +198,52 @@ function renderAttachmentPreview(props: ChatProps) {
           </div>
         `,
       )}
+    </div>
+  `;
+}
+
+function renderComposeSelectors(props: ChatProps, activeSession: GatewaySessionRow | undefined) {
+  const models = props.availableModels;
+  const profiles = props.availableAuthProfiles;
+  if ((!models || models.length === 0) && (!profiles || profiles.length === 0)) {
+    return nothing;
+  }
+
+  const currentModel = activeSession?.model ?? "default";
+  const currentProvider = activeSession?.modelProvider ?? null;
+
+  // Auth profile: display-only badge showing current provider
+  const profileLabel = currentProvider ?? "auto";
+
+  return html`
+    <div class="chat-compose__selectors">
+      <span
+        class="chat-selector chat-selector--badge"
+        title="Auth profile (read-only)"
+      >${profileLabel}</span>
+      ${
+        models && models.length > 0
+          ? html`
+            <select
+              class="chat-selector"
+              title="Model"
+              @change=${(e: Event) => {
+                const val = (e.target as HTMLSelectElement).value;
+                props.onModelChange?.(val === "default" ? null : val);
+              }}
+            >
+              <option value="default" ?selected=${currentModel === "default"}>default</option>
+              ${models.map(
+                (m) => html`
+                  <option value=${m.id} ?selected=${currentModel === m.id}>
+                    ${m.name || m.id}
+                  </option>
+                `,
+              )}
+            </select>
+          `
+          : nothing
+      }
     </div>
   `;
 }
@@ -472,6 +522,7 @@ export function renderChat(props: ChatProps) {
             ></textarea>
           </label>
           <div class="chat-compose__actions">
+            ${renderComposeSelectors(props, activeSession)}
             <button
               class="btn"
               ?disabled=${!props.connected || (!canAbort && props.sending)}
