@@ -85,6 +85,7 @@ export type ChatProps = {
   availableModels?: Array<{ id: string; name: string; provider: string }>;
   availableAuthProfiles?: Array<{ id: string; provider: string }>;
   onModelChange?: (modelId: string | null) => void;
+  onAuthProfileChange?: (profileId: string | null) => void;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -205,43 +206,103 @@ function renderAttachmentPreview(props: ChatProps) {
 function renderComposeSelectors(props: ChatProps, activeSession: GatewaySessionRow | undefined) {
   const models = props.availableModels;
   const profiles = props.availableAuthProfiles;
-  if ((!models || models.length === 0) && (!profiles || profiles.length === 0)) {
+  const hasModels = models && models.length > 0;
+  const hasProfiles = profiles && profiles.length > 0;
+
+  if (!hasModels && !hasProfiles) {
     return nothing;
   }
 
+  const currentAuthProfile = activeSession?.authProfile ?? "";
   const currentModel = activeSession?.model ?? "default";
-  const currentProvider = activeSession?.modelProvider ?? null;
 
-  // Auth profile: display-only badge showing current provider
-  const profileLabel = currentProvider ?? "auto";
+  // Determine selected provider from auth profile
+  const selectedProfile = hasProfiles
+    ? profiles.find((p) => p.id === currentAuthProfile)
+    : undefined;
+  const selectedProvider = selectedProfile?.provider ?? null;
+
+  // Filter models by provider if a specific auth profile is selected
+  const filteredModels = hasModels
+    ? selectedProvider
+      ? models.filter((m) => m.provider === selectedProvider)
+      : models
+    : [];
+
+  // Group models by provider
+  const grouped = new Map<string, Array<{ id: string; name: string; provider: string }>>();
+  for (const m of filteredModels) {
+    const provider = m.provider || "other";
+    let list = grouped.get(provider);
+    if (!list) {
+      list = [];
+      grouped.set(provider, list);
+    }
+    list.push(m);
+  }
 
   return html`
     <div class="chat-compose__selectors">
-      <span
-        class="chat-selector chat-selector--badge"
-        title="Auth profile (read-only)"
-      >${profileLabel}</span>
       ${
-        models && models.length > 0
+        hasProfiles
           ? html`
-            <select
-              class="chat-selector"
-              title="Model"
-              @change=${(e: Event) => {
-                const val = (e.target as HTMLSelectElement).value;
-                props.onModelChange?.(val === "default" ? null : val);
-              }}
-            >
-              <option value="default" ?selected=${currentModel === "default"}>default</option>
-              ${models.map(
-                (m) => html`
-                  <option value=${m.id} ?selected=${currentModel === m.id}>
-                    ${m.name || m.id}
-                  </option>
-                `,
-              )}
-            </select>
-          `
+          <select
+            class="chat-selector"
+            title="Auth Profile"
+            @change=${(e: Event) => {
+              const val = (e.target as HTMLSelectElement).value;
+              props.onAuthProfileChange?.(val === "" ? null : val);
+            }}
+          >
+            <option value="" ?selected=${!currentAuthProfile}>auto</option>
+            ${profiles.map(
+              (p) => html`
+                <option value=${p.id} ?selected=${currentAuthProfile === p.id}>
+                  ${p.id} (${p.provider})
+                </option>
+              `,
+            )}
+          </select>
+        `
+          : nothing
+      }
+      ${
+        hasModels
+          ? html`
+          <select
+            class="chat-selector"
+            title="Model"
+            @change=${(e: Event) => {
+              const val = (e.target as HTMLSelectElement).value;
+              props.onModelChange?.(val === "default" ? null : val);
+            }}
+          >
+            <option value="default" ?selected=${currentModel === "default"}>default</option>
+            ${
+              selectedProvider
+                ? filteredModels.map(
+                    (m) => html`
+                    <option value=${m.id} ?selected=${currentModel === m.id}>
+                      ${m.name || m.id}
+                    </option>
+                  `,
+                  )
+                : [...grouped.entries()].map(
+                    ([provider, providerModels]) => html`
+                    <optgroup label=${provider}>
+                      ${providerModels.map(
+                        (m) => html`
+                          <option value=${m.id} ?selected=${currentModel === m.id}>
+                            ${m.name || m.id}
+                          </option>
+                        `,
+                      )}
+                    </optgroup>
+                  `,
+                  )
+            }
+          </select>
+        `
           : nothing
       }
     </div>
@@ -523,20 +584,22 @@ export function renderChat(props: ChatProps) {
           </label>
           <div class="chat-compose__actions">
             ${renderComposeSelectors(props, activeSession)}
-            <button
-              class="btn"
-              ?disabled=${!props.connected || (!canAbort && props.sending)}
-              @click=${canAbort ? props.onAbort : props.onNewSession}
-            >
-              ${canAbort ? "Stop" : "New session"}
-            </button>
-            <button
-              class="btn primary"
-              ?disabled=${!props.connected}
-              @click=${props.onSend}
-            >
-              ${isBusy ? "Queue" : "Send"}<kbd class="btn-kbd">↵</kbd>
-            </button>
+            <div class="chat-compose__buttons">
+              <button
+                class="btn"
+                ?disabled=${!props.connected || (!canAbort && props.sending)}
+                @click=${canAbort ? props.onAbort : props.onNewSession}
+              >
+                ${canAbort ? "Stop" : "New session"}
+              </button>
+              <button
+                class="btn primary"
+                ?disabled=${!props.connected}
+                @click=${props.onSend}
+              >
+                ${isBusy ? "Queue" : "Send"}<kbd class="btn-kbd">↵</kbd>
+              </button>
+            </div>
           </div>
         </div>
       </div>

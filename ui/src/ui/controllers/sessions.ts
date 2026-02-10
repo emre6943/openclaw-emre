@@ -66,6 +66,7 @@ export async function patchSession(
     verboseLevel?: string | null;
     reasoningLevel?: string | null;
     model?: string | null;
+    authProfile?: string | null;
   },
 ) {
   if (!state.client || !state.connected) {
@@ -86,6 +87,9 @@ export async function patchSession(
   }
   if ("model" in patch) {
     params.model = patch.model;
+  }
+  if ("authProfile" in patch) {
+    params.authProfile = patch.authProfile;
   }
   try {
     await state.client.request("sessions.patch", params);

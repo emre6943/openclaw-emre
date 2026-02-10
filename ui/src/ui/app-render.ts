@@ -863,6 +863,9 @@ export function renderApp(state: AppViewState) {
                 onModelChange: (modelId: string | null) => {
                   void patchSession(state, state.sessionKey, { model: modelId });
                 },
+                onAuthProfileChange: (profileId: string | null) => {
+                  void patchSession(state, state.sessionKey, { authProfile: profileId });
+                },
               })
             : nothing
         }
