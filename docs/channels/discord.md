@@ -330,6 +330,37 @@ See [Slash commands](/tools/slash-commands) for command catalog and behavior.
 
   </Accordion>
 
+  <Accordion title="Gateway proxy">
+    Route Discord gateway WebSocket traffic through an HTTP(S) proxy with `channels.discord.proxy`.
+
+```json5
+{
+  channels: {
+    discord: {
+      proxy: "http://proxy.example:8080",
+    },
+  },
+}
+```
+
+    Per-account override:
+
+```json5
+{
+  channels: {
+    discord: {
+      accounts: {
+        primary: {
+          proxy: "http://proxy.example:8080",
+        },
+      },
+    },
+  },
+}
+```
+
+  </Accordion>
+
   <Accordion title="PluralKit support">
     Enable PluralKit resolution to map proxied messages to system member identity:
 
@@ -392,6 +423,22 @@ Default gate behavior:
 | roles                                                                                                                                                                    | disabled |
 | moderation                                                                                                                                                               | disabled |
 | presence                                                                                                                                                                 | disabled |
+
+## Voice messages
+
+Discord voice messages show a waveform preview and require OGG/Opus audio plus metadata. OpenClaw generates the waveform automatically, but it needs `ffmpeg` and `ffprobe` available on the gateway host to inspect and convert audio files.
+
+Requirements and constraints:
+
+- Provide a **local file path** (URLs are rejected).
+- Omit text content (Discord does not allow text + voice message in the same payload).
+- Any audio format is accepted; OpenClaw converts to OGG/Opus when needed.
+
+Example:
+
+```bash
+message(action="send", channel="discord", target="channel:123", path="/path/to/audio.mp3", asVoice=true)
+```
 
 ## Troubleshooting
 

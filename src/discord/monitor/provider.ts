@@ -1,9 +1,12 @@
 import { Client, type BaseMessageInteractiveComponent } from "@buape/carbon";
 import { GatewayIntents, GatewayPlugin } from "@buape/carbon/gateway";
 import { Routes } from "discord-api-types/v10";
+import { HttpsProxyAgent } from "https-proxy-agent";
 import { inspect } from "node:util";
+import WebSocket from "ws";
 import type { HistoryEntry } from "../../auto-reply/reply/history.js";
 import type { OpenClawConfig, ReplyToMode } from "../../config/config.js";
+import type { DiscordAccountConfig } from "../../config/types.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import { resolveTextChunkLimit } from "../../auto-reply/chunk.js";
 import { listNativeCommandSpecsForConfig } from "../../auto-reply/commands-registry.js";
@@ -52,6 +55,47 @@ export type MonitorDiscordOpts = {
   historyLimit?: number;
   replyToMode?: ReplyToMode;
 };
+
+function createDiscordGatewayPlugin(params: {
+  discordConfig: DiscordAccountConfig;
+  runtime: RuntimeEnv;
+}): GatewayPlugin {
+  const intents = resolveDiscordGatewayIntents(params.discordConfig?.intents);
+  const proxy = params.discordConfig?.proxy?.trim();
+  const options = {
+    reconnect: { maxAttempts: 50 },
+    intents,
+    autoInteractions: true,
+  };
+
+  if (!proxy) {
+    return new GatewayPlugin(options);
+  }
+
+  try {
+    const agent = new HttpsProxyAgent<string>(proxy);
+
+    params.runtime.log?.("discord: gateway proxy enabled");
+
+    class ProxyGatewayPlugin extends GatewayPlugin {
+      #proxyAgent: HttpsProxyAgent<string>;
+
+      constructor(proxyAgent: HttpsProxyAgent<string>) {
+        super(options);
+        this.#proxyAgent = proxyAgent;
+      }
+
+      createWebSocket(url: string) {
+        return new WebSocket(url, { agent: this.#proxyAgent });
+      }
+    }
+
+    return new ProxyGatewayPlugin(agent);
+  } catch (err) {
+    params.runtime.error?.(danger(`discord: invalid gateway proxy: ${String(err)}`));
+    return new GatewayPlugin(options);
+  }
+}
 
 function summarizeAllowList(list?: Array<string | number>) {
   if (!list || list.length === 0) {
@@ -222,7 +266,8 @@ export async function monitorDiscordProvider(opts: MonitorDiscordOpts = {}) {
           const channels = guildCfg?.channels ?? {};
           const channelKeys = Object.keys(channels).filter((key) => key !== "*");
           if (channelKeys.length === 0) {
-            entries.push({ input: guildKey, guildKey });
+            const input = /^\d+$/.test(guildKey) ? `guild:${guildKey}` : guildKey;
+            entries.push({ input, guildKey });
             continue;
           }
           for (const channelKey of channelKeys) {
@@ -526,15 +571,7 @@ export async function monitorDiscordProvider(opts: MonitorDiscordOpts = {}) {
       listeners: [],
       components,
     },
-    [
-      new GatewayPlugin({
-        reconnect: {
-          maxAttempts: 50,
-        },
-        intents: resolveDiscordGatewayIntents(discordCfg.intents),
-        autoInteractions: true,
-      }),
-    ],
+    [createDiscordGatewayPlugin({ discordConfig: discordCfg, runtime })],
   );
 
   await deployDiscordCommands({ client, runtime, enabled: nativeEnabled });
@@ -713,3 +750,7 @@ async function clearDiscordNativeCommands(params: {
     params.runtime.error?.(danger(`discord: failed to clear native commands: ${String(err)}`));
   }
 }
+
+export const __testing = {
+  createDiscordGatewayPlugin,
+};
