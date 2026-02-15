@@ -22,7 +22,9 @@ import { readChannelAllowFromStore } from "../pairing/pairing-store.js";
 import { resolveAgentRoute } from "../routing/resolve-route.js";
 import { resolveThreadSessionKeys } from "../routing/session-key.js";
 import { withTelegramApiErrorLogging } from "./api-logging.js";
+import { parseAuthCallbackData, buildAuthProfileKeyboard } from "./auth-buttons.js";
 import {
+  firstDefined,
   isSenderAllowed,
   normalizeAllowFromWithStore,
   type NormalizedAllowFrom,
@@ -234,6 +236,50 @@ export const registerTelegramHandlers = ({
     }
     const modelCfg = cfg.agents?.defaults?.model;
     return typeof modelCfg === "string" ? modelCfg : modelCfg?.primary;
+  };
+
+  const resolveTelegramSessionAuthProfile = (params: {
+    chatId: number | string;
+    isGroup: boolean;
+    isForum: boolean;
+    messageThreadId?: number;
+    resolvedThreadId?: number;
+  }): string | undefined => {
+    const resolvedThreadId =
+      params.resolvedThreadId ??
+      resolveTelegramForumThreadId({
+        isForum: params.isForum,
+        messageThreadId: params.messageThreadId,
+      });
+    const peerId = params.isGroup
+      ? buildTelegramGroupPeerId(params.chatId, resolvedThreadId)
+      : String(params.chatId);
+    const parentPeer = buildTelegramParentPeer({
+      isGroup: params.isGroup,
+      resolvedThreadId,
+      chatId: params.chatId,
+    });
+    const route = resolveAgentRoute({
+      cfg,
+      channel: "telegram",
+      accountId,
+      peer: {
+        kind: params.isGroup ? "group" : "direct",
+        id: peerId,
+      },
+      parentPeer,
+    });
+    const baseSessionKey = route.sessionKey;
+    const dmThreadId = !params.isGroup ? params.messageThreadId : undefined;
+    const threadKeys =
+      dmThreadId != null
+        ? resolveThreadSessionKeys({ baseSessionKey, threadId: String(dmThreadId) })
+        : null;
+    const sessionKey = threadKeys?.sessionKey ?? baseSessionKey;
+    const storePath = resolveStorePath(cfg.session?.store, { agentId: route.agentId });
+    const store = loadSessionStore(storePath);
+    const entry = store[sessionKey];
+    return entry?.authProfileOverride?.trim();
   };
 
   const processMediaGroup = async (entry: MediaGroupEntry) => {
@@ -724,6 +770,79 @@ export const registerTelegramHandlers = ({
             base: callbackMessage,
             from: callback.from,
             text: `/model ${provider}/${model}`,
+          });
+          await processMessage(buildSyntheticContext(ctx, syntheticMessage), [], storeAllowFrom, {
+            forceWasMentioned: true,
+            messageIdOverride: callback.id,
+          });
+          return;
+        }
+
+        return;
+      }
+
+      // Auth profile selection callback handler (auth_list, auth_sel_*, auth_clear)
+      const authCallback = parseAuthCallbackData(data);
+      if (authCallback) {
+        const { buildAuthProfileData } =
+          await import("../auto-reply/reply/commands-auth-profile.js");
+        const { profiles } = buildAuthProfileData(cfg);
+
+        const editMessageWithButtons = async (
+          text: string,
+          buttons: ReturnType<typeof buildAuthProfileKeyboard>,
+        ) => {
+          const keyboard = buildInlineKeyboard(buttons);
+          try {
+            await bot.api.editMessageText(
+              callbackMessage.chat.id,
+              callbackMessage.message_id,
+              text,
+              keyboard ? { reply_markup: keyboard } : undefined,
+            );
+          } catch (editErr) {
+            const errStr = String(editErr);
+            if (errStr.includes("no text in the message")) {
+              try {
+                await bot.api.deleteMessage(callbackMessage.chat.id, callbackMessage.message_id);
+              } catch {}
+              await bot.api.sendMessage(
+                callbackMessage.chat.id,
+                text,
+                keyboard ? { reply_markup: keyboard } : undefined,
+              );
+            } else if (!errStr.includes("message is not modified")) {
+              throw editErr;
+            }
+          }
+        };
+
+        if (authCallback.type === "list") {
+          if (profiles.length === 0) {
+            await editMessageWithButtons("No auth profiles configured.", []);
+            return;
+          }
+          const currentAuthProfile = resolveTelegramSessionAuthProfile({
+            chatId,
+            isGroup,
+            isForum,
+            messageThreadId,
+            resolvedThreadId,
+          });
+          const buttons = buildAuthProfileKeyboard({
+            profiles,
+            currentProfileId: currentAuthProfile,
+          });
+          await editMessageWithButtons("Select an auth profile:", buttons);
+          return;
+        }
+
+        if (authCallback.type === "select" || authCallback.type === "clear") {
+          const authArg = authCallback.type === "clear" ? "auto" : authCallback.profileId;
+          const syntheticMessage = buildSyntheticTextMessage({
+            base: callbackMessage,
+            from: callback.from,
+            text: `/auth ${authArg}`,
           });
           await processMessage(buildSyntheticContext(ctx, syntheticMessage), [], storeAllowFrom, {
             forceWasMentioned: true,

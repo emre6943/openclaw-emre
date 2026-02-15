@@ -560,6 +560,20 @@ function buildChatCommands(): ChatCommandDefinition[] {
       category: "options",
     }),
     defineChatCommand({
+      key: "auth",
+      nativeName: "auth",
+      description: "Show or set the auth profile.",
+      textAlias: "/auth",
+      category: "options",
+      args: [
+        {
+          name: "profile",
+          description: "Auth profile id (or 'auto' to clear override)",
+          type: "string",
+        },
+      ],
+    }),
+    defineChatCommand({
       key: "queue",
       nativeName: "queue",
       description: "Adjust queue settings.",
