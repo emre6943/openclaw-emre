@@ -985,6 +985,11 @@
   box-shadow: var(--focus-ring);
 }
 
+/* Unavailable skill — dim the toggle to signal it can't actually run */
+.cfg-toggle--unavailable {
+  opacity: 0.35;
+}
+
 /* Object (collapsible) */
 .cfg-object {
   border: 1px solid var(--border);

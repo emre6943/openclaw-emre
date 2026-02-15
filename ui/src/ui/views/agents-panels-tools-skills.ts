@@ -443,6 +443,9 @@ function renderAgentSkillRow(
   const enabled = params.usingAllowlist ? params.allowSet.has(skill.name) : true;
   const missing = computeSkillMissing(skill);
   const reasons = computeSkillReasons(skill);
+  // Dim the toggle when the skill can't actually run (missing deps, disabled, blocked)
+  // to avoid the confusing "green toggle + blocked badge" state.
+  const effectivelyUnavailable = !skill.eligible;
   return html`
     <div class="list-item agent-skill-row">
       <div class="list-main">
@@ -461,7 +464,7 @@ function renderAgentSkillRow(
         }
       </div>
       <div class="list-meta">
-        <label class="cfg-toggle">
+        <label class="cfg-toggle${effectivelyUnavailable ? " cfg-toggle--unavailable" : ""}">
           <input
             type="checkbox"
             .checked=${enabled}
