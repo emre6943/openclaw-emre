@@ -21,7 +21,6 @@ import {
 import { icons } from "../icons.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import "../components/resizable-divider.ts";
-import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
 
 /** Module-level emoji autocomplete state, reset on session change. */
 let emojiState: EmojiAutocompleteState = createEmojiAutocompleteState();
