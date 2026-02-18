@@ -289,9 +289,14 @@ export function createJob(state: CronServiceState, input: CronJobCreate): CronJo
         ? true
         : undefined;
   const enabled = typeof input.enabled === "boolean" ? input.enabled : true;
+  const authProfile =
+    typeof input.authProfile === "string" && input.authProfile.trim()
+      ? input.authProfile.trim()
+      : undefined;
   const job: CronJob = {
     id,
     agentId: normalizeOptionalAgentId(input.agentId),
+    authProfile,
     name: normalizeRequiredName(input.name),
     description: normalizeOptionalText(input.description),
     enabled,
@@ -360,6 +365,15 @@ export function applyJobPatch(job: CronJob, patch: CronJobPatch) {
   }
   if ("agentId" in patch) {
     job.agentId = normalizeOptionalAgentId((patch as { agentId?: unknown }).agentId);
+  }
+  if ("authProfile" in patch) {
+    const raw = (patch as { authProfile?: unknown }).authProfile;
+    if (raw === null || raw === undefined) {
+      job.authProfile = undefined;
+    } else if (typeof raw === "string") {
+      const trimmed = raw.trim();
+      job.authProfile = trimmed || undefined;
+    }
   }
   assertSupportedJobSpec(job);
   assertDeliverySupport(job);

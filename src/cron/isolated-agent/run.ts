@@ -436,7 +436,7 @@ export async function runCronIsolatedAgentTurn(params: {
             cliSessionId,
           });
         }
-        return runEmbeddedPiAgent({
+        const embeddedParams: Parameters<typeof runEmbeddedPiAgent>[0] = {
           sessionId: cronSession.sessionEntry.sessionId,
           sessionKey: agentSessionKey,
           agentId,
@@ -456,7 +456,12 @@ export async function runCronIsolatedAgentTurn(params: {
           runId: cronSession.sessionEntry.sessionId,
           requireExplicitMessageTarget: true,
           disableMessageTool: deliveryRequested,
-        });
+        };
+        if (params.job.authProfile) {
+          embeddedParams.authProfileId = params.job.authProfile;
+          embeddedParams.authProfileIdSource = "user";
+        }
+        return runEmbeddedPiAgent(embeddedParams);
       },
     });
     runResult = fallbackResult.result;

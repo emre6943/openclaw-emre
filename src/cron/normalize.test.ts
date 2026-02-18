@@ -289,6 +289,38 @@ describe("normalizeCronJobCreate", () => {
     expect(normalized.wakeMode).toBe("now");
   });
 
+  it("trims authProfile and drops empty", () => {
+    const normalized = normalizeCronJobCreate({
+      name: "auth-profile",
+      enabled: true,
+      schedule: { kind: "cron", expr: "* * * * *" },
+      sessionTarget: "isolated",
+      wakeMode: "now",
+      authProfile: "  anthropic:default  ",
+      payload: {
+        kind: "agentTurn",
+        message: "hi",
+      },
+    }) as unknown as Record<string, unknown>;
+
+    expect(normalized.authProfile).toBe("anthropic:default");
+
+    const empty = normalizeCronJobCreate({
+      name: "auth-profile-empty",
+      enabled: true,
+      schedule: { kind: "cron", expr: "* * * * *" },
+      sessionTarget: "isolated",
+      wakeMode: "now",
+      authProfile: "   ",
+      payload: {
+        kind: "agentTurn",
+        message: "hi",
+      },
+    }) as unknown as Record<string, unknown>;
+
+    expect("authProfile" in empty).toBe(false);
+  });
+
   it("strips invalid delivery mode from partial delivery objects", () => {
     const normalized = normalizeCronJobCreate({
       name: "delivery mode",

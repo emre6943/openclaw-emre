@@ -143,10 +143,12 @@ export async function addCronJob(state: CronState) {
           }
         : undefined;
     const agentId = form.agentId.trim();
+    const authProfile = form.authProfile.trim();
     const job = {
       name: form.name.trim(),
       description: form.description.trim() || undefined,
       agentId: agentId || undefined,
+      authProfile: authProfile || undefined,
       enabled: form.enabled,
       schedule,
       sessionTarget: form.sessionTarget,

@@ -448,6 +448,7 @@ export type CronPayload =
   | {
       kind: "agentTurn";
       message: string;
+      model?: string;
       thinking?: string;
       timeoutSeconds?: number;
     };
@@ -471,6 +472,7 @@ export type CronJobState = {
 export type CronJob = {
   id: string;
   agentId?: string;
+  authProfile?: string;
   name: string;
   description?: string;
   enabled: boolean;

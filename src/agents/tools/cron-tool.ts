@@ -220,7 +220,8 @@ JOB SCHEMA (for add action):
   "payload": { ... },       // Required: what to execute
   "delivery": { ... },      // Optional: announce summary or webhook POST
   "sessionTarget": "main" | "isolated",  // Required
-  "enabled": true | false   // Optional, default true
+  "enabled": true | false,  // Optional, default true
+  "authProfile": "string"  // Optional: auth profile ID override (e.g. "anthropic:default")
 }
 
 SCHEDULE TYPES (schedule.kind):
@@ -299,6 +300,7 @@ Use jobId as the canonical identifier; id is accepted for compatibility. Use con
               "description",
               "deleteAfterRun",
               "agentId",
+              "authProfile",
               "message",
               "text",
               "model",

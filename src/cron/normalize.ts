@@ -301,6 +301,20 @@ export function normalizeCronJobInput(
     }
   }
 
+  if ("authProfile" in base) {
+    const authProfile = base.authProfile;
+    if (typeof authProfile === "string") {
+      const trimmed = authProfile.trim();
+      if (trimmed) {
+        next.authProfile = trimmed;
+      } else {
+        delete next.authProfile;
+      }
+    } else {
+      delete next.authProfile;
+    }
+  }
+
   if ("enabled" in base) {
     const enabled = base.enabled;
     if (typeof enabled === "boolean") {

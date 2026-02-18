@@ -122,6 +122,15 @@ export function renderCron(props: CronProps) {
               placeholder="default"
             />
           </label>
+          <label class="field">
+            <span>Auth Profile</span>
+            <input
+              .value=${props.form.authProfile}
+              @input=${(e: Event) =>
+                props.onFormChange({ authProfile: (e.target as HTMLInputElement).value })}
+              placeholder="e.g. anthropic:emre-personal"
+            />
+          </label>
           <label class="field checkbox">
             <span>Enabled</span>
             <input
@@ -421,6 +430,8 @@ function renderJob(job: CronJob, props: CronProps) {
         <div class="list-sub">${formatCronSchedule(job)}</div>
         ${renderJobPayload(job)}
         ${job.agentId ? html`<div class="muted cron-job-agent">Agent: ${job.agentId}</div>` : nothing}
+        ${job.authProfile ? html`<div class="muted cron-job-agent">Auth: ${job.authProfile}</div>` : nothing}
+        ${job.payload.kind === "agentTurn" && job.payload.model ? html`<div class="muted cron-job-agent">Model: ${job.payload.model}</div>` : nothing}
       </div>
       <div class="list-meta">
         ${renderJobState(job)}
