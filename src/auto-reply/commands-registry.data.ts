@@ -595,6 +595,20 @@ function buildChatCommands(): ChatCommandDefinition[] {
       category: "options",
     }),
     defineChatCommand({
+      key: "auth",
+      nativeName: "auth",
+      description: "Show or set the auth profile.",
+      textAlias: "/auth",
+      category: "options",
+      args: [
+        {
+          name: "profile",
+          description: "Auth profile id (or 'auto' to clear override)",
+          type: "string",
+        },
+      ],
+    }),
+    defineChatCommand({
       key: "queue",
       nativeName: "queue",
       description: "Adjust queue settings.",
@@ -628,6 +642,13 @@ function buildChatCommands(): ChatCommandDefinition[] {
       formatArgs: COMMAND_ARG_FORMATTERS.queue,
     }),
     defineChatCommand({
+      key: "cronjobs",
+      nativeName: "cronjobs",
+      description: "List cron jobs and their status.",
+      textAlias: "/cronjobs",
+      category: "status",
+    }),
+    defineChatCommand({
       key: "bash",
       description: "Run host shell commands (host-only).",
       textAlias: "/bash",
@@ -647,6 +668,7 @@ function buildChatCommands(): ChatCommandDefinition[] {
       .map((dock) => defineDockCommand(dock)),
   ];
 
+  registerAlias(commands, "cronjobs", "/cron");
   registerAlias(commands, "whoami", "/id");
   registerAlias(commands, "think", "/thinking", "/t");
   registerAlias(commands, "verbose", "/v");

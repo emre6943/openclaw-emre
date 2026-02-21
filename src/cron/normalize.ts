@@ -1,3 +1,4 @@
+import type { CronJobCreate, CronJobPatch } from "./types.js";
 import { sanitizeAgentId } from "../routing/session-key.js";
 import { isRecord } from "../utils.js";
 import {
@@ -9,7 +10,6 @@ import { parseAbsoluteTimeMs } from "./parse.js";
 import { migrateLegacyCronPayload } from "./payload-migration.js";
 import { inferLegacyName } from "./service/normalize.js";
 import { normalizeCronStaggerMs, resolveDefaultCronStaggerMs } from "./stagger.js";
-import type { CronJobCreate, CronJobPatch } from "./types.js";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -320,6 +320,20 @@ export function normalizeCronJobInput(
       } else {
         delete next.sessionKey;
       }
+    }
+  }
+
+  if ("authProfile" in base) {
+    const authProfile = base.authProfile;
+    if (typeof authProfile === "string") {
+      const trimmed = authProfile.trim();
+      if (trimmed) {
+        next.authProfile = trimmed;
+      } else {
+        delete next.authProfile;
+      }
+    } else {
+      delete next.authProfile;
     }
   }
 

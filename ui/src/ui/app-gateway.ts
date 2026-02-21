@@ -1,33 +1,7 @@
-import {
-  GATEWAY_EVENT_UPDATE_AVAILABLE,
-  type GatewayUpdateAvailableEventPayload,
-} from "../../../src/gateway/events.js";
-import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat.ts";
 import type { EventLogEntry } from "./app-events.ts";
-import {
-  applySettings,
-  loadCron,
-  refreshActiveTab,
-  setLastActiveSessionKey,
-} from "./app-settings.ts";
-import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream.ts";
 import type { OpenClawApp } from "./app.ts";
-import { loadAgents } from "./controllers/agents.ts";
-import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
-import { loadChatHistory } from "./controllers/chat.ts";
-import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
-import { loadDevices } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
-import {
-  addExecApproval,
-  parseExecApprovalRequested,
-  parseExecApprovalResolved,
-  removeExecApproval,
-} from "./controllers/exec-approval.ts";
-import { loadNodes } from "./controllers/nodes.ts";
-import { loadSessions } from "./controllers/sessions.ts";
 import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
-import { GatewayBrowserClient } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import type { UiSettings } from "./storage.ts";
 import type {
@@ -37,6 +11,32 @@ import type {
   StatusSummary,
   UpdateAvailable,
 } from "./types.ts";
+import {
+  GATEWAY_EVENT_UPDATE_AVAILABLE,
+  type GatewayUpdateAvailableEventPayload,
+} from "../../../src/gateway/events.js";
+import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat.ts";
+import {
+  applySettings,
+  loadCron,
+  refreshActiveTab,
+  setLastActiveSessionKey,
+} from "./app-settings.ts";
+import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream.ts";
+import { loadAgents } from "./controllers/agents.ts";
+import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
+import { loadChatHistory } from "./controllers/chat.ts";
+import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
+import { loadDevices } from "./controllers/devices.ts";
+import {
+  addExecApproval,
+  parseExecApprovalRequested,
+  parseExecApprovalResolved,
+  removeExecApproval,
+} from "./controllers/exec-approval.ts";
+import { loadNodes } from "./controllers/nodes.ts";
+import { loadSessions } from "./controllers/sessions.ts";
+import { GatewayBrowserClient } from "./gateway.ts";
 
 type GatewayHost = {
   settings: UiSettings;
@@ -65,6 +65,8 @@ type GatewayHost = {
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
   updateAvailable: UpdateAvailable | null;
+  chatModels: Array<{ id: string; name: string; provider: string }>;
+  chatAuthProfiles: Array<{ id: string; provider: string }>;
 };
 
 type SessionDefaultsSnapshot = {
@@ -159,6 +161,7 @@ export function connectGateway(host: GatewayHost) {
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
+      void loadChatModelsAndProfiles(host);
     },
     onClose: ({ code, reason }) => {
       if (host.client !== client) {
@@ -286,6 +289,35 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   if (evt.event === GATEWAY_EVENT_UPDATE_AVAILABLE) {
     const payload = evt.payload as GatewayUpdateAvailableEventPayload | undefined;
     host.updateAvailable = payload?.updateAvailable ?? null;
+  }
+}
+
+async function loadChatModelsAndProfiles(host: GatewayHost) {
+  if (!host.client) {
+    return;
+  }
+  try {
+    const [modelsRes, configRes] = await Promise.all([
+      host.client.request<{ models: Array<{ id: string; name: string; provider: string }> }>(
+        "models.list",
+        {},
+      ),
+      host.client.request<{
+        parsed?: { auth?: { profiles?: Record<string, { provider?: string; mode?: string }> } };
+      }>("config.get", {}),
+    ]);
+    if (modelsRes?.models) {
+      host.chatModels = modelsRes.models;
+    }
+    const profiles = configRes?.parsed?.auth?.profiles;
+    if (profiles && typeof profiles === "object") {
+      host.chatAuthProfiles = Object.entries(profiles).map(([id, val]) => ({
+        id,
+        provider: val.provider ?? "unknown",
+      }));
+    }
+  } catch {
+    // Non-critical; silently ignore
   }
 }
 

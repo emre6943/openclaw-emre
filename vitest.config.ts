@@ -38,6 +38,7 @@ export default defineConfig({
       "extensions/**/*.test.ts",
       "test/**/*.test.ts",
       "ui/src/ui/views/usage-render-details.test.ts",
+      "ui/src/ui/components/emoji-autocomplete.test.ts",
     ],
     setupFiles: ["test/setup.ts"],
     exclude: [

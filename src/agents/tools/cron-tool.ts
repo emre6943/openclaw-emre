@@ -1,7 +1,7 @@
 import { Type } from "@sinclair/typebox";
+import type { CronDelivery, CronMessageChannel } from "../../cron/types.js";
 import { loadConfig } from "../../config/config.js";
 import { normalizeCronJobCreate, normalizeCronJobPatch } from "../../cron/normalize.js";
-import type { CronDelivery, CronMessageChannel } from "../../cron/types.js";
 import { normalizeHttpWebhookUrl } from "../../cron/webhook-url.js";
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
 import { extractTextFromChatContent } from "../../shared/chat-content.js";
@@ -310,6 +310,7 @@ Use jobId as the canonical identifier; id is accepted for compatibility. Use con
               "description",
               "deleteAfterRun",
               "agentId",
+              "authProfile",
               "sessionKey",
               "message",
               "text",
