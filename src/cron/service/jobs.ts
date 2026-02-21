@@ -1,11 +1,4 @@
 import crypto from "node:crypto";
-import { parseAbsoluteTimeMs } from "../parse.js";
-import { computeNextRunAtMs } from "../schedule.js";
-import {
-  normalizeCronStaggerMs,
-  resolveCronStaggerMs,
-  resolveDefaultCronStaggerMs,
-} from "../stagger.js";
 import type {
   CronDelivery,
   CronDeliveryPatch,
@@ -15,6 +8,14 @@ import type {
   CronPayload,
   CronPayloadPatch,
 } from "../types.js";
+import type { CronServiceState } from "./state.js";
+import { parseAbsoluteTimeMs } from "../parse.js";
+import { computeNextRunAtMs } from "../schedule.js";
+import {
+  normalizeCronStaggerMs,
+  resolveCronStaggerMs,
+  resolveDefaultCronStaggerMs,
+} from "../stagger.js";
 import { normalizeHttpWebhookUrl } from "../webhook-url.js";
 import {
   normalizeOptionalAgentId,
@@ -23,7 +24,6 @@ import {
   normalizePayloadToSystemText,
   normalizeRequiredName,
 } from "./normalize.js";
-import type { CronServiceState } from "./state.js";
 
 const STUCK_RUN_MS = 2 * 60 * 60 * 1000;
 
@@ -350,9 +350,14 @@ export function createJob(state: CronServiceState, input: CronJobCreate): CronJo
         ? true
         : undefined;
   const enabled = typeof input.enabled === "boolean" ? input.enabled : true;
+  const authProfile =
+    typeof input.authProfile === "string" && input.authProfile.trim()
+      ? input.authProfile.trim()
+      : undefined;
   const job: CronJob = {
     id,
     agentId: normalizeOptionalAgentId(input.agentId),
+    authProfile,
     sessionKey: normalizeOptionalSessionKey((input as { sessionKey?: unknown }).sessionKey),
     name: normalizeRequiredName(input.name),
     description: normalizeOptionalText(input.description),
@@ -437,6 +442,15 @@ export function applyJobPatch(job: CronJob, patch: CronJobPatch) {
   }
   if ("agentId" in patch) {
     job.agentId = normalizeOptionalAgentId((patch as { agentId?: unknown }).agentId);
+  }
+  if ("authProfile" in patch) {
+    const raw = (patch as { authProfile?: unknown }).authProfile;
+    if (raw === null || raw === undefined) {
+      job.authProfile = undefined;
+    } else if (typeof raw === "string") {
+      const trimmed = raw.trim();
+      job.authProfile = trimmed || undefined;
+    }
   }
   if ("sessionKey" in patch) {
     job.sessionKey = normalizeOptionalSessionKey((patch as { sessionKey?: unknown }).sessionKey);

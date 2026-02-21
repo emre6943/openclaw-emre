@@ -1,10 +1,10 @@
 import { html, nothing } from "lit";
+import type { AppViewState } from "./app-view-state.ts";
 import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
 import { t } from "../i18n/index.ts";
 import { refreshChatAvatar } from "./app-chat.ts";
 import { renderUsageTab } from "./app-render-usage-tab.ts";
 import { renderChatControls, renderTab, renderThemeToggle } from "./app-render.helpers.ts";
-import type { AppViewState } from "./app-view-state.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
@@ -873,6 +873,15 @@ export function renderApp(state: AppViewState) {
                 onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
                 assistantName: state.assistantName,
                 assistantAvatar: state.assistantAvatar,
+                // Model & auth profile selectors
+                availableModels: state.chatModels,
+                availableAuthProfiles: state.chatAuthProfiles,
+                onModelChange: (modelId: string | null) => {
+                  void patchSession(state, state.sessionKey, { model: modelId });
+                },
+                onAuthProfileChange: (profileId: string | null) => {
+                  void patchSession(state, state.sessionKey, { authProfile: profileId });
+                },
               })
             : nothing
         }

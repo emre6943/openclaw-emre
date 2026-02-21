@@ -1,19 +1,31 @@
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
+import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
+import type { ChatItem, MessageGroup } from "../types/chat-types.ts";
+import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
 import {
   renderMessageGroup,
   renderReadingIndicatorGroup,
   renderStreamingGroup,
 } from "../chat/grouped-render.ts";
 import { normalizeMessage, normalizeRoleForGrouping } from "../chat/message-normalizer.ts";
+import {
+  type EmojiAutocompleteState,
+  createEmojiAutocompleteState,
+  updateEmojiAutocomplete,
+  applyEmojiSelection,
+  handleEmojiKeydown,
+  renderEmojiAutocomplete,
+} from "../components/emoji-autocomplete.ts";
 import { icons } from "../icons.ts";
 import { detectTextDirection } from "../text-direction.ts";
-import type { SessionsListResult } from "../types.ts";
-import type { ChatItem, MessageGroup } from "../types/chat-types.ts";
-import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
-import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
 import "../components/resizable-divider.ts";
+import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
+
+/** Module-level emoji autocomplete state, reset on session change. */
+let emojiState: EmojiAutocompleteState = createEmojiAutocompleteState();
+let emojiStateSessionKey: string | null = null;
 
 export type CompactionIndicatorStatus = {
   active: boolean;
@@ -80,6 +92,11 @@ export type ChatProps = {
   onCloseSidebar?: () => void;
   onSplitRatioChange?: (ratio: number) => void;
   onChatScroll?: (event: Event) => void;
+  // Model & auth profile selectors
+  availableModels?: Array<{ id: string; name: string; provider: string }>;
+  availableAuthProfiles?: Array<{ id: string; provider: string }>;
+  onModelChange?: (modelId: string | null) => void;
+  onAuthProfileChange?: (profileId: string | null) => void;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -237,7 +254,118 @@ function renderAttachmentPreview(props: ChatProps) {
   `;
 }
 
+function renderComposeSelectors(props: ChatProps, activeSession: GatewaySessionRow | undefined) {
+  const models = props.availableModels;
+  const profiles = props.availableAuthProfiles;
+  const hasModels = models && models.length > 0;
+  const hasProfiles = profiles && profiles.length > 0;
+
+  if (!hasModels && !hasProfiles) {
+    return nothing;
+  }
+
+  const currentAuthProfile = activeSession?.authProfile ?? "";
+  const currentModel = activeSession?.model ?? "default";
+
+  // Determine selected provider from auth profile
+  const selectedProfile = hasProfiles
+    ? profiles.find((p) => p.id === currentAuthProfile)
+    : undefined;
+  const selectedProvider = selectedProfile?.provider ?? null;
+
+  // Filter models by provider if a specific auth profile is selected
+  const filteredModels = hasModels
+    ? selectedProvider
+      ? models.filter((m) => m.provider === selectedProvider)
+      : models
+    : [];
+
+  // Group models by provider
+  const grouped = new Map<string, Array<{ id: string; name: string; provider: string }>>();
+  for (const m of filteredModels) {
+    const provider = m.provider || "other";
+    let list = grouped.get(provider);
+    if (!list) {
+      list = [];
+      grouped.set(provider, list);
+    }
+    list.push(m);
+  }
+
+  return html`
+    <div class="chat-compose__selectors">
+      ${
+        hasProfiles
+          ? html`
+          <select
+            class="chat-selector"
+            title="Auth Profile"
+            @change=${(e: Event) => {
+              const val = (e.target as HTMLSelectElement).value;
+              props.onAuthProfileChange?.(val === "" ? null : val);
+            }}
+          >
+            <option value="" ?selected=${!currentAuthProfile}>auto</option>
+            ${profiles.map(
+              (p) => html`
+                <option value=${p.id} ?selected=${currentAuthProfile === p.id}>
+                  ${p.id} (${p.provider})
+                </option>
+              `,
+            )}
+          </select>
+        `
+          : nothing
+      }
+      ${
+        hasModels
+          ? html`
+          <select
+            class="chat-selector"
+            title="Model"
+            @change=${(e: Event) => {
+              const val = (e.target as HTMLSelectElement).value;
+              props.onModelChange?.(val === "default" ? null : val);
+            }}
+          >
+            <option value="default" ?selected=${currentModel === "default"}>default</option>
+            ${
+              selectedProvider
+                ? filteredModels.map(
+                    (m) => html`
+                    <option value=${m.id} ?selected=${currentModel === m.id}>
+                      ${m.name || m.id}
+                    </option>
+                  `,
+                  )
+                : [...grouped.entries()].map(
+                    ([provider, providerModels]) => html`
+                    <optgroup label=${provider}>
+                      ${providerModels.map(
+                        (m) => html`
+                          <option value=${m.id} ?selected=${currentModel === m.id}>
+                            ${m.name || m.id}
+                          </option>
+                        `,
+                      )}
+                    </optgroup>
+                  `,
+                  )
+            }
+          </select>
+        `
+          : nothing
+      }
+    </div>
+  `;
+}
+
 export function renderChat(props: ChatProps) {
+  // Reset emoji autocomplete state on session change
+  if (props.sessionKey !== emojiStateSessionKey) {
+    emojiState = createEmojiAutocompleteState();
+    emojiStateSessionKey = props.sessionKey;
+  }
   const canCompose = props.connected;
   const isBusy = props.sending || props.stream !== null;
   const canAbort = Boolean(props.canAbort && props.onAbort);
@@ -423,18 +551,65 @@ export function renderChat(props: ChatProps) {
       <div class="chat-compose">
         ${renderAttachmentPreview(props)}
         <div class="chat-compose__row">
-          <label class="field chat-compose__field">
+          <label class="field chat-compose__field emoji-autocomplete-wrap">
             <span>Message</span>
+            ${renderEmojiAutocomplete(
+              emojiState,
+              (emoji) => {
+                const ta = document.querySelector<HTMLTextAreaElement>(
+                  ".chat-compose__field textarea",
+                );
+                if (!ta) {
+                  return;
+                }
+                const result = applyEmojiSelection(props.draft, ta.selectionStart, emoji);
+                emojiState = createEmojiAutocompleteState();
+                props.onDraftChange(result.text);
+                requestAnimationFrame(() => {
+                  ta.selectionStart = result.cursor;
+                  ta.selectionEnd = result.cursor;
+                  ta.focus();
+                });
+              },
+              (next) => {
+                emojiState = next;
+                props.onDraftChange(props.draft); // trigger re-render
+              },
+            )}
             <textarea
               ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement))}
               .value=${props.draft}
               dir=${detectTextDirection(props.draft)}
               ?disabled=${!props.connected}
               @keydown=${(e: KeyboardEvent) => {
-                if (e.key !== "Enter") {
+                if (e.isComposing || e.keyCode === 229) {
                   return;
                 }
-                if (e.isComposing || e.keyCode === 229) {
+
+                // Let emoji autocomplete handle keys first
+                const consumed = handleEmojiKeydown(
+                  e,
+                  emojiState,
+                  (next) => {
+                    emojiState = next;
+                    props.onDraftChange(props.draft); // trigger re-render
+                  },
+                  (emoji) => {
+                    const ta = e.target as HTMLTextAreaElement;
+                    const result = applyEmojiSelection(props.draft, ta.selectionStart, emoji);
+                    emojiState = createEmojiAutocompleteState();
+                    props.onDraftChange(result.text);
+                    requestAnimationFrame(() => {
+                      ta.selectionStart = result.cursor;
+                      ta.selectionEnd = result.cursor;
+                    });
+                  },
+                );
+                if (consumed) {
+                  return;
+                }
+
+                if (e.key !== "Enter") {
                   return;
                 }
                 if (e.shiftKey) {
@@ -445,12 +620,14 @@ export function renderChat(props: ChatProps) {
                 }
                 e.preventDefault();
                 if (canCompose) {
+                  emojiState = createEmojiAutocompleteState();
                   props.onSend();
                 }
               }}
               @input=${(e: Event) => {
                 const target = e.target as HTMLTextAreaElement;
                 adjustTextareaHeight(target);
+                emojiState = updateEmojiAutocomplete(target.value, target.selectionStart);
                 props.onDraftChange(target.value);
               }}
               @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
@@ -458,20 +635,23 @@ export function renderChat(props: ChatProps) {
             ></textarea>
           </label>
           <div class="chat-compose__actions">
-            <button
-              class="btn"
-              ?disabled=${!props.connected || (!canAbort && props.sending)}
-              @click=${canAbort ? props.onAbort : props.onNewSession}
-            >
-              ${canAbort ? "Stop" : "New session"}
-            </button>
-            <button
-              class="btn primary"
-              ?disabled=${!props.connected}
-              @click=${props.onSend}
-            >
-              ${isBusy ? "Queue" : "Send"}<kbd class="btn-kbd">↵</kbd>
-            </button>
+            ${renderComposeSelectors(props, activeSession)}
+            <div class="chat-compose__buttons">
+              <button
+                class="btn"
+                ?disabled=${!props.connected || (!canAbort && props.sending)}
+                @click=${canAbort ? props.onAbort : props.onNewSession}
+              >
+                ${canAbort ? "Stop" : "New session"}
+              </button>
+              <button
+                class="btn primary"
+                ?disabled=${!props.connected}
+                @click=${props.onSend}
+              >
+                ${isBusy ? "Queue" : "Send"}<kbd class="btn-kbd">↵</kbd>
+              </button>
+            </div>
           </div>
         </div>
       </div>
