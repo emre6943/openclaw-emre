@@ -76,6 +76,8 @@ export type AppViewState = {
   chatModelsLoading: boolean;
   chatModelCatalog: ModelCatalogEntry[];
   chatQueue: ChatQueueItem[];
+  chatModels: Array<{ id: string; name: string; provider: string }>;
+  chatAuthProfiles: Array<{ id: string; provider: string }>;
   chatManualRefreshInFlight: boolean;
   nodesLoading: boolean;
   nodes: Array<Record<string, unknown>>;

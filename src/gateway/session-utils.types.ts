@@ -42,6 +42,7 @@ export type GatewaySessionRow = {
   totalTokens?: number;
   totalTokensFresh?: boolean;
   responseUsage?: "on" | "off" | "tokens" | "full";
+  authProfile?: string | null;
   modelProvider?: string;
   model?: string;
   contextTokens?: number;

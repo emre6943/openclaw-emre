@@ -2,6 +2,7 @@ export type CronJobBase<TSchedule, TSessionTarget, TWakeMode, TPayload, TDeliver
   {
     id: string;
     agentId?: string;
+    authProfile?: string;
     sessionKey?: string;
     name: string;
     description?: string;

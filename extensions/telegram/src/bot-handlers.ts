@@ -43,12 +43,12 @@ import { resolveAgentRoute } from "../../../src/routing/resolve-route.js";
 import { resolveThreadSessionKeys } from "../../../src/routing/session-key.js";
 import { applyModelOverrideToSessionEntry } from "../../../src/sessions/model-overrides.js";
 import { withTelegramApiErrorLogging } from "./api-logging.js";
+import { parseAuthCallbackData, buildAuthProfileKeyboard } from "./auth-buttons.js";
 import {
   isSenderAllowed,
   normalizeDmAllowFromWithStore,
   type NormalizedAllowFrom,
 } from "./bot-access.js";
-import type { TelegramMediaRef } from "./bot-message-context.js";
 import { RegisterTelegramHandlerParams } from "./bot-native-commands.js";
 import {
   MEDIA_GROUP_TIMEOUT_MS,
@@ -63,7 +63,6 @@ import {
   resolveTelegramForumThreadId,
   resolveTelegramGroupAllowFromContext,
 } from "./bot/helpers.js";
-import type { TelegramContext } from "./bot/types.js";
 import { resolveTelegramConversationRoute } from "./conversation-route.js";
 import { enforceTelegramDmAccess } from "./dm-access.js";
 import {
@@ -1519,6 +1518,71 @@ export const registerTelegramHandlers = ({
           } catch (err) {
             await editMessageWithButtons(`❌ Failed to change model: ${String(err)}`, []);
           }
+          return;
+        }
+
+        return;
+      }
+
+      // Auth profile selection callback handler (auth_list, auth_sel_*, auth_clear)
+      const authCallback = parseAuthCallbackData(data);
+      if (authCallback) {
+        const { buildAuthProfileData } =
+          await import("../auto-reply/reply/commands-auth-profile.js");
+        const { profiles } = buildAuthProfileData(cfg);
+
+        const editMessageWithAuthButtons = async (
+          text: string,
+          buttons: ReturnType<typeof buildAuthProfileKeyboard>,
+        ) => {
+          const keyboard = buildInlineKeyboard(buttons);
+          try {
+            await editCallbackMessage(text, keyboard ? { reply_markup: keyboard } : undefined);
+          } catch (editErr) {
+            const errStr = String(editErr);
+            if (errStr.includes("no text in the message")) {
+              try {
+                await deleteCallbackMessage();
+              } catch {}
+              await replyToCallbackChat(text, keyboard ? { reply_markup: keyboard } : undefined);
+            } else if (!errStr.includes("message is not modified")) {
+              throw editErr;
+            }
+          }
+        };
+
+        if (authCallback.type === "list") {
+          if (profiles.length === 0) {
+            await editMessageWithAuthButtons("No auth profiles configured.", []);
+            return;
+          }
+          const sessionState = resolveTelegramSessionState({
+            chatId,
+            isGroup,
+            isForum,
+            messageThreadId,
+            resolvedThreadId,
+          });
+          const currentAuthProfile = sessionState.sessionEntry?.authProfileOverride?.trim();
+          const buttons = buildAuthProfileKeyboard({
+            profiles,
+            currentProfileId: currentAuthProfile,
+          });
+          await editMessageWithAuthButtons("Select an auth profile:", buttons);
+          return;
+        }
+
+        if (authCallback.type === "select" || authCallback.type === "clear") {
+          const authArg = authCallback.type === "clear" ? "auto" : authCallback.profileId;
+          const syntheticMessage = buildSyntheticTextMessage({
+            base: callbackMessage,
+            from: callback.from,
+            text: `/auth ${authArg}`,
+          });
+          await processMessage(buildSyntheticContext(ctx, syntheticMessage), [], storeAllowFrom, {
+            forceWasMentioned: true,
+            messageIdOverride: callback.id,
+          });
           return;
         }
 

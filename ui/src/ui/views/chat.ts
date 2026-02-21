@@ -26,6 +26,14 @@ import {
   type SlashCommandDef,
 } from "../chat/slash-commands.ts";
 import { isSttSupported, startStt, stopStt } from "../chat/speech.ts";
+import {
+  type EmojiAutocompleteState,
+  createEmojiAutocompleteState,
+  updateEmojiAutocomplete,
+  applyEmojiSelection,
+  handleEmojiKeydown,
+  renderEmojiAutocomplete,
+} from "../components/emoji-autocomplete.ts";
 import { icons } from "../icons.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import type { GatewaySessionRow, SessionsListResult } from "../types.ts";
@@ -34,6 +42,10 @@ import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
 import { agentLogoUrl, resolveAgentAvatarUrl } from "./agents-utils.ts";
 import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
 import "../components/resizable-divider.ts";
+
+/** Module-level emoji autocomplete state, reset on session change. */
+let emojiState: EmojiAutocompleteState = createEmojiAutocompleteState();
+let emojiStateSessionKey: string | null = null;
 
 export type CompactionIndicatorStatus = {
   active: boolean;
@@ -109,6 +121,11 @@ export type ChatProps = {
   onSplitRatioChange?: (ratio: number) => void;
   onChatScroll?: (event: Event) => void;
   basePath?: string;
+  // Model & auth profile selectors
+  availableModels?: Array<{ id: string; name: string; provider: string }>;
+  availableAuthProfiles?: Array<{ id: string; provider: string }>;
+  onModelChange?: (modelId: string | null) => void;
+  onAuthProfileChange?: (profileId: string | null) => void;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -799,7 +816,116 @@ function renderSlashMenu(
   `;
 }
 
+function renderComposeSelectors(props: ChatProps, activeSession: GatewaySessionRow | undefined) {
+  const models = props.availableModels;
+  const profiles = props.availableAuthProfiles;
+  const hasModels = models && models.length > 0;
+  const hasProfiles = profiles && profiles.length > 0;
+
+  if (!hasModels && !hasProfiles) {
+    return nothing;
+  }
+
+  const currentAuthProfile = activeSession?.authProfile ?? "";
+  const currentModel = activeSession?.model ?? "default";
+
+  const selectedProfile = hasProfiles
+    ? profiles.find((p) => p.id === currentAuthProfile)
+    : undefined;
+  const selectedProvider = selectedProfile?.provider ?? null;
+
+  const filteredModels = hasModels
+    ? selectedProvider
+      ? models.filter((m) => m.provider === selectedProvider)
+      : models
+    : [];
+
+  const grouped = new Map<string, Array<{ id: string; name: string; provider: string }>>();
+  for (const m of filteredModels) {
+    const provider = m.provider || "other";
+    let list = grouped.get(provider);
+    if (!list) {
+      list = [];
+      grouped.set(provider, list);
+    }
+    list.push(m);
+  }
+
+  return html`
+    <div class="chat-compose__selectors">
+      ${
+        hasProfiles
+          ? html`
+          <select
+            class="chat-selector"
+            title="Auth Profile"
+            @change=${(e: Event) => {
+              const val = (e.target as HTMLSelectElement).value;
+              props.onAuthProfileChange?.(val === "" ? null : val);
+            }}
+          >
+            <option value="" ?selected=${!currentAuthProfile}>auto</option>
+            ${profiles.map(
+              (p) => html`
+                <option value=${p.id} ?selected=${currentAuthProfile === p.id}>
+                  ${p.id} (${p.provider})
+                </option>
+              `,
+            )}
+          </select>
+        `
+          : nothing
+      }
+      ${
+        hasModels
+          ? html`
+          <select
+            class="chat-selector"
+            title="Model"
+            @change=${(e: Event) => {
+              const val = (e.target as HTMLSelectElement).value;
+              props.onModelChange?.(val === "default" ? null : val);
+            }}
+          >
+            <option value="default" ?selected=${currentModel === "default"}>default</option>
+            ${
+              selectedProvider
+                ? filteredModels.map(
+                    (m) => html`
+                    <option value=${m.id} ?selected=${currentModel === m.id}>
+                      ${m.name || m.id}
+                    </option>
+                  `,
+                  )
+                : [...grouped.entries()].map(
+                    ([provider, providerModels]) => html`
+                    <optgroup label=${provider}>
+                      ${providerModels.map(
+                        (m) => html`
+                          <option value=${m.id} ?selected=${currentModel === m.id}>
+                            ${m.name || m.id}
+                          </option>
+                        `,
+                      )}
+                    </optgroup>
+                  `,
+                  )
+            }
+          </select>
+        `
+          : nothing
+      }
+    </div>
+  `;
+}
+
 export function renderChat(props: ChatProps) {
+  // Reset emoji autocomplete state on session change
+  if (props.sessionKey !== emojiStateSessionKey) {
+    emojiState = createEmojiAutocompleteState();
+    emojiStateSessionKey = props.sessionKey;
+  }
+
   const canCompose = props.connected;
   const isBusy = props.sending || props.stream !== null;
   const canAbort = Boolean(props.canAbort && props.onAbort);
@@ -953,6 +1079,33 @@ export function renderChat(props: ChatProps) {
   `;
 
   const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.isComposing || e.keyCode === 229) {
+      return;
+    }
+
+    // Let emoji autocomplete handle keys first
+    const emojiConsumed = handleEmojiKeydown(
+      e,
+      emojiState,
+      (next) => {
+        emojiState = next;
+        requestUpdate();
+      },
+      (emoji) => {
+        const ta = e.target as HTMLTextAreaElement;
+        const result = applyEmojiSelection(props.draft, ta.selectionStart, emoji);
+        emojiState = createEmojiAutocompleteState();
+        props.onDraftChange(result.text);
+        requestAnimationFrame(() => {
+          ta.selectionStart = result.cursor;
+          ta.selectionEnd = result.cursor;
+        });
+      },
+    );
+    if (emojiConsumed) {
+      return;
+    }
+
     // Slash menu navigation — arg mode
     if (vs.slashMenuOpen && vs.slashMenuMode === "args" && vs.slashMenuArgItems.length > 0) {
       const len = vs.slashMenuArgItems.length;
@@ -1057,6 +1210,7 @@ export function renderChat(props: ChatProps) {
         if (props.draft.trim()) {
           inputHistory.push(props.draft);
         }
+        emojiState = createEmojiAutocompleteState();
         props.onSend();
       }
     }
@@ -1065,6 +1219,7 @@ export function renderChat(props: ChatProps) {
   const handleInput = (e: Event) => {
     const target = e.target as HTMLTextAreaElement;
     adjustTextareaHeight(target);
+    emojiState = updateEmojiAutocomplete(target.value, target.selectionStart);
     updateSlashMenu(target.value, requestUpdate);
     inputHistory.reset();
     props.onDraftChange(target.value);
@@ -1196,6 +1351,26 @@ export function renderChat(props: ChatProps) {
 
         ${vs.sttRecording && vs.sttInterimText ? html`<div class="agent-chat__stt-interim">${vs.sttInterimText}</div>` : nothing}
 
+        ${renderEmojiAutocomplete(
+          emojiState,
+          (emoji) => {
+            const ta = document.querySelector<HTMLTextAreaElement>(".agent-chat__input textarea");
+            if (!ta) return;
+            const result = applyEmojiSelection(props.draft, ta.selectionStart, emoji);
+            emojiState = createEmojiAutocompleteState();
+            props.onDraftChange(result.text);
+            requestAnimationFrame(() => {
+              ta.selectionStart = result.cursor;
+              ta.selectionEnd = result.cursor;
+              ta.focus();
+            });
+          },
+          (next) => {
+            emojiState = next;
+            requestUpdate();
+          },
+        )}
+
         <textarea
           ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement))}
           .value=${props.draft}
@@ -1207,6 +1382,8 @@ export function renderChat(props: ChatProps) {
           placeholder=${vs.sttRecording ? "Listening..." : placeholder}
           rows="1"
         ></textarea>
+
+        ${renderComposeSelectors(props, activeSession)}
 
         <div class="agent-chat__toolbar">
           <div class="agent-chat__toolbar-left">

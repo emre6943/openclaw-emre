@@ -1,3 +1,6 @@
+import type { OpenClawConfig } from "../../config/config.js";
+import type { AgentDefaultsConfig } from "../../config/types.js";
+import type { CronJob, CronRunOutcome, CronRunTelemetry } from "../types.js";
 import {
   resolveAgentConfig,
   resolveAgentDir,
@@ -38,14 +41,12 @@ import {
   normalizeVerboseLevel,
   supportsXHighThinking,
 } from "../../auto-reply/thinking.js";
-import type { CliDeps } from "../../cli/outbound-send-deps.js";
-import type { OpenClawConfig } from "../../config/config.js";
+import { type CliDeps } from "../../cli/outbound-send-deps.js";
 import {
   resolveSessionTranscriptPath,
   setSessionRuntimeModel,
   updateSessionStore,
 } from "../../config/sessions.js";
-import type { AgentDefaultsConfig } from "../../config/types.js";
 import { registerAgentRunContext } from "../../infra/agent-events.js";
 import { logWarn } from "../../logger.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
@@ -56,7 +57,6 @@ import {
   isExternalHookSession,
 } from "../../security/external-content.js";
 import { resolveCronDeliveryPlan } from "../delivery.js";
-import type { CronJob, CronRunOutcome, CronRunTelemetry } from "../types.js";
 import {
   dispatchCronDelivery,
   matchesMessagingToolDeliveryTarget,
@@ -534,7 +534,7 @@ export async function runCronIsolatedAgentTurn(params: {
   // Resolve auth profile for the session, mirroring the inbound auto-reply path
   // (get-reply-run.ts). Without this, isolated cron sessions fall back to env-var
   // auth which may not match the configured auth-profiles, causing 401 errors.
-  const authProfileId = await resolveSessionAuthProfileOverride({
+  let authProfileId = await resolveSessionAuthProfileOverride({
     cfg: cfgWithAgentDefaults,
     provider,
     agentDir,
@@ -544,7 +544,13 @@ export async function runCronIsolatedAgentTurn(params: {
     storePath: cronSession.storePath,
     isNewSession: cronSession.isNewSession,
   });
-  const authProfileIdSource = cronSession.sessionEntry.authProfileOverrideSource;
+  let authProfileIdSource = cronSession.sessionEntry.authProfileOverrideSource;
+
+  // Custom: allow cron jobs to specify an explicit authProfile override
+  if (params.job.authProfile) {
+    authProfileId = params.job.authProfile;
+    authProfileIdSource = "user";
+  }
 
   let runResult: Awaited<ReturnType<typeof runEmbeddedPiAgent>> | undefined;
   let fallbackProvider = provider;
